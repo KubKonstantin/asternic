@@ -22,7 +22,8 @@ require_once "config.php";
 require_once "sesvars.php";
 require_once "casdoor_auth.php";
 check_auth(); // Проверка аутентификации через Casdoor
-$current_user = $_SESSION['casdoor_user'] ?? null;
+$current_user = get_authenticated_user();
+$current_username = get_authenticated_username();
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
 $start_today = date('Y-m-d 00:00:00');
@@ -79,6 +80,7 @@ $res = mysqli_query($connection, $query);
 while ($row = mysqli_fetch_row($res)) {
 	$colas[] = $row[0];
 }
+$colas = filter_queues_for_user($colas, $current_username);
 
 //$query = "SELECT agent FROM agents_new";
 $query = "SELECT membername FROM queue_members";
@@ -355,6 +357,11 @@ $items_cola = array_map("remove_quotes", $items_cola);
 
 $items_agente = explode(",", $agent);
 $items_agente = array_map("remove_quotes", $items_agente);
+
+$items_cola = array_values(array_intersect($items_cola, $colas));
+if (empty($items_cola) && !empty($colas)) {
+	$items_cola = [$colas[0]];
+}
 
 ?>
 
