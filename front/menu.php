@@ -22,8 +22,9 @@ along with Asterisk Call Center Stats.  If not, see
 <div id="content">
 <a name='0'></a>
 <div style="float: right; padding: 10px; font-size: 14px;">
-    <?php if (isset($_SESSION['casdoor_user'])): ?>
-        Привет, <?php echo htmlspecialchars($_SESSION['casdoor_user']['name']); ?>!
+    <?php $auth_user = $_SESSION['auth_user'] ?? null; ?>
+    <?php if ($auth_user): ?>
+        Привет, <?php echo htmlspecialchars($auth_user['name']); ?>!
         | <a href="logout.php">Выйти</a>
     <?php endif; ?>
 </div>

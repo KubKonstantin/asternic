@@ -1,0 +1,11 @@
+{
+  "auth_provider": "casdoor",
+  "queue_permissions": {
+    "ipetrov": ["sales", "managers"],
+    "ivinogradov": ["managers", "customers"],
+    "admin": ["*"]
+  },
+  "internal_users": {
+    "admin": "$2y$12$ct13N1012xHhJ06UbuVtYuGgVkamzJZymastUWReVrfzRuQquKmF6"
+  }
+}
