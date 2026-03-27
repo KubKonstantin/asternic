@@ -1,20 +1,19 @@
 <?php
-// casdoor_callback.php
 require_once 'casdoor_auth.php';
 
-session_start();
+if (!is_casdoor_enabled()) {
+    header('Location: internal_login.php');
+    exit();
+}
 
 if (isset($_GET['code'])) {
     $code = $_GET['code'];
-    
-    // Получаем токен
+
     $token_data = get_token($code);
-    
+
     if (isset($token_data['access_token'])) {
-        // Получаем информацию о пользователе
         $user_info = get_user_info($token_data['access_token']);
-        
-        // Сохраняем в сессию
+
         $_SESSION['casdoor_authenticated'] = true;
         $_SESSION['casdoor_user'] = [
             'id'        => $user_info['sub'] ?? '',
@@ -23,8 +22,12 @@ if (isset($_GET['code'])) {
             'email'     => $user_info['email'] ?? '',
             'roles'     => $user_info['roles'] ?? []
         ];
-        
-        // Перенаправляем на главную страницу
+        $_SESSION['auth_user'] = [
+            'username' => $_SESSION['casdoor_user']['username'],
+            'name' => $_SESSION['casdoor_user']['name'] ?: $_SESSION['casdoor_user']['username'],
+            'provider' => 'casdoor'
+        ];
+
         header('Location: index.php');
         exit();
     } else {
