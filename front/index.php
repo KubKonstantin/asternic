@@ -134,7 +134,71 @@ $res->free();
     	        i--;
 	        }
     	}
+
+		if (box == "queues") {
+			update_agents_by_selected_queues();
+		}
 	return false;
+	}
+
+	function get_selected_values(boxname) {
+		var values = [];
+		var select_box = document.forms[0].elements[boxname];
+		if (!select_box) {
+			return values;
+		}
+		for (var i = 0; i < select_box.length; i++) {
+			values.push(select_box.options[i].text);
+		}
+		return values;
+	}
+
+	function replace_options(boxname, values) {
+		var select_box = document.forms[0].elements[boxname];
+		if (!select_box) {
+			return;
+		}
+		while (select_box.options.length) {
+			select_box.options[0] = null;
+		}
+		for (var i = 0; i < values.length; i++) {
+			select_box.options[select_box.options.length] = new Option(values[i], "'" + values[i] + "'");
+		}
+	}
+
+	function agent_matches_selected_queue(agent_name, selected_queues) {
+		for (var i = 0; i < selected_queues.length; i++) {
+			if (agent_name.indexOf(selected_queues[i] + "_") === 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function update_agents_by_selected_queues() {
+		var selected_queues = get_selected_values("List_Queue[]");
+		var selected_agents = get_selected_values("List_Agent[]");
+		var filtered_selected_agents = [];
+		var available_agents = [];
+
+		for (var i = 0; i < selected_agents.length; i++) {
+			if (agent_matches_selected_queue(selected_agents[i], selected_queues)) {
+				filtered_selected_agents.push(selected_agents[i]);
+			}
+		}
+
+		for (var j = 0; j < all_agents.length; j++) {
+			var current_agent = all_agents[j];
+			if (!agent_matches_selected_queue(current_agent, selected_queues)) {
+				continue;
+			}
+			if (filtered_selected_agents.indexOf(current_agent) === -1) {
+				available_agents.push(current_agent);
+			}
+		}
+
+		replace_options("List_Agent[]", filtered_selected_agents);
+		replace_options("List_Agent_available", available_agents);
 	}
 
 	function List_Queue_check_submit() {
@@ -352,6 +416,19 @@ $res->free();
 function remove_quotes($argument) {
 	return substr($argument, 1, -1);
 }
+
+function agent_matches_queue_name($agent_name, $selected_queues) {
+	foreach ($selected_queues as $selected_queue) {
+		if ($selected_queue === "NONE") {
+			continue;
+		}
+		if (strpos($agent_name, $selected_queue . "_") === 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 $items_cola = explode(",", $queue);
 $items_cola = array_map("remove_quotes", $items_cola);
 
@@ -362,6 +439,10 @@ $items_cola = array_values(array_intersect($items_cola, $colas));
 if (empty($items_cola) && !empty($colas)) {
 	$items_cola = [$colas[0]];
 }
+
+$items_agente = array_values(array_filter($items_agente, function ($agent_name) use ($items_cola) {
+	return agent_matches_queue_name($agent_name, $items_cola);
+}));
 
 ?>
 
@@ -419,7 +500,7 @@ foreach ($items_cola as $queueel) {
 		<?php
 
 foreach ($agentes as $agentel) {
-	if ($agentel != "NONE" && !in_array($agentel, $items_agente) && $agent != "''") {
+	if ($agentel != "NONE" && !in_array($agentel, $items_agente) && $agent != "''" && agent_matches_queue_name($agentel, $items_cola)) {
 		echo "<option value=\"'$agentel'\">$agentel</option>\n";
 	}
 }
@@ -440,7 +521,7 @@ foreach ($agentes as $agentel) {
 		<?php
 if ($agent == "''") {
 	foreach ($agentes as $agentel) {
-		if ($agentel != "NONE") {
+		if ($agentel != "NONE" && agent_matches_queue_name($agentel, $items_cola)) {
 			echo "<option value=\"'$agentel'\">$agentel</option>\n";
 		}
 	}
@@ -454,6 +535,13 @@ if ($agent == "''") {
    </td>
 </tr>
 </table>
+
+<script type="text/javascript">
+var all_agents = <?php echo json_encode(array_values(array_unique(array_filter($agentes, function ($agent_name) {
+	return $agent_name != "NONE";
+})))) ?>;
+update_agents_by_selected_queues();
+</script>
 
 
 
