@@ -26,6 +26,21 @@ $current_user = get_authenticated_user();
 $current_username = get_authenticated_username();
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
+function agent_matches_queue_name($agent_name, $selected_queues) {
+	if (in_array("all", $selected_queues)) {
+		return true;
+	}
+	foreach ($selected_queues as $selected_queue) {
+		if ($selected_queue === "NONE") {
+			continue;
+		}
+		if (strpos($agent_name, $selected_queue . "_") === 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 $start_today = date('Y-m-d 00:00:00');
 $end_today = date('Y-m-d 23:59:59');
 
@@ -74,6 +89,9 @@ $end_month_ts -= 86400;
 
 $end_month = date('Y-m-d', $end_month_ts);
 
+$colas = [];
+$agentes = [];
+
 //$query = "SELECT queuename FROM queues_new";
 $query = "SELECT name FROM queues";
 $res = mysqli_query($connection, $query);
@@ -87,6 +105,17 @@ $query = "SELECT membername FROM queue_members";
 $res = mysqli_query($connection, $query);
 while ($row = mysqli_fetch_row($res)) {
 	$agentes[] = $row[0];
+}
+
+$accessible_agents = array_values(array_filter($agentes, function ($agent_name) use ($colas) {
+	return $agent_name != "NONE" && agent_matches_queue_name($agent_name, $colas);
+}));
+
+if (empty($colas) || empty($accessible_agents)) {
+	mysqli_close($connection);
+	$res->free();
+	header('Location: access_denied.php');
+	exit();
 }
 
 mysqli_close($connection);
@@ -418,21 +447,6 @@ $res->free();
 <?php
 function remove_quotes($argument) {
 	return substr($argument, 1, -1);
-}
-
-function agent_matches_queue_name($agent_name, $selected_queues) {
-	if (in_array("all", $selected_queues)) {
-		return true;
-	}
-	foreach ($selected_queues as $selected_queue) {
-		if ($selected_queue === "NONE") {
-			continue;
-		}
-		if (strpos($agent_name, $selected_queue . "_") === 0) {
-			return true;
-		}
-	}
-	return false;
 }
 
 $items_cola = explode(",", $queue);
