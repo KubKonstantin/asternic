@@ -20,6 +20,7 @@ along with Asternic Call Center Stats.  If not, see
  */
 
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
+ob_start();
 $language = 'ru';
 require_once "lang/$language.php";
 require 'tfpdf.php';
@@ -168,6 +169,9 @@ foreach ($data as $row_index => $row) {
 }
 
 if (isset($_POST['format']) && $_POST['format'] === 'pdf') {
+	if (ob_get_length()) {
+		ob_clean();
+	}
 	$pdf = new PDF();
 	$pdf->AddFont('ArialMT','','arialuni.php');
 	// $pdf->AddFont('ArialMT','B','arial.php');
@@ -187,6 +191,9 @@ if (isset($_POST['format']) && $_POST['format'] === 'pdf') {
 	$pdf->Output($filename,"D");
 	//$pdf->Output('F', '/var/www/html/queue-stats/pdf/export.pdf', true);
 } else {
+	if (ob_get_length()) {
+		ob_clean();
+	}
 	export_csv($headercsv, $data, $download_title);
 }
 ?>
