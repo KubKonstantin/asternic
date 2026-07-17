@@ -40,7 +40,7 @@ while ($row = $res->fetch_assoc()) {
 }
 
 $header_pdf = array("Дата", "Агент", "Номер", "Назнач.", "Продолж.");
-$width_pdf = array(50, 25, 25, 25, 25);
+$width_pdf = array(45, 60, 38, 38, 25);
 $title_pdf = "Исходящие вызовы";
 $data_pdf = array();
 foreach ($out as $k => $r) {
