@@ -67,17 +67,25 @@ function print_exports($header_pdf,$data_pdf,$width_pdf,$title_pdf,$cover_pdf,$h
 		if (!is_array($header_csv) || empty($header_csv)) {
 			$header_csv = $header_pdf;
 		}
-		$payload = base64_encode(json_encode(array(
+		$export_data = array(
 			'header_csv' => $header_csv,
 			'header_pdf' => $header_pdf,
 			'data' => $data_pdf,
 			'width' => $width_pdf,
 			'title' => $title_pdf,
 			'cover' => $cover_pdf
-		), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+		);
+		$export_token = bin2hex(random_bytes(16));
+		if (!isset($_SESSION['EXPORT_PAYLOADS']) || !is_array($_SESSION['EXPORT_PAYLOADS'])) {
+			$_SESSION['EXPORT_PAYLOADS'] = array();
+		}
+		$_SESSION['EXPORT_PAYLOADS'][$export_token] = $export_data;
+		if (count($_SESSION['EXPORT_PAYLOADS']) > 5) {
+			$_SESSION['EXPORT_PAYLOADS'] = array_slice($_SESSION['EXPORT_PAYLOADS'], -5, null, true);
+		}
 		echo "<BR><form method='post' action='export.php'>\n";
 		echo $lang["$language"]['export'];
-		echo "<input type='hidden' name='payload' value='".htmlspecialchars($payload, ENT_QUOTES, 'UTF-8')."' />\n";
+		echo "<input type='hidden' name='export_token' value='".htmlspecialchars($export_token, ENT_QUOTES, 'UTF-8')."' />\n";
 		echo "<button type='submit' name='format' value='pdf' style='border:0;background:transparent;cursor:pointer' ";
 		tooltip($lang["$language"]['pdfhelp'],200);
 		echo "><img src='images/pdf.gif' alt='PDF'></button>\n";

@@ -23,6 +23,7 @@ error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 $language = 'ru';
 require_once "lang/$language.php";
 require 'tfpdf.php';
+session_start();
 
 class PDF extends tFPDF {
 	function __construct() {
@@ -129,11 +130,21 @@ function export_csv($header, $data, $title) {
 	fclose($output);
 }
 
-$decoded_payload = isset($_POST['payload']) ? base64_decode($_POST['payload'], true) : false;
-$payload = $decoded_payload !== false ? json_decode($decoded_payload, true) : null;
+$payload = null;
+$export_token = isset($_POST['export_token']) ? (string)$_POST['export_token'] : '';
+if ($export_token !== '' && isset($_SESSION['EXPORT_PAYLOADS'][$export_token])) {
+	$payload = $_SESSION['EXPORT_PAYLOADS'][$export_token];
+}
+
+// Совместимость с уже открытыми страницами, созданными до перехода на токены.
+if (!is_array($payload) && isset($_POST['payload'])) {
+	$encoded_payload = str_replace(' ', '+', (string)$_POST['payload']);
+	$decoded_payload = base64_decode($encoded_payload, true);
+	$payload = $decoded_payload !== false ? json_decode($decoded_payload, true) : null;
+}
 if (!is_array($payload)) {
 	http_response_code(400);
-	die('Некорректные данные выгрузки');
+	die('Некорректные данные выгрузки. Обновите страницу отчета и повторите попытку.');
 }
 
 $headercsv = isset($payload['header_csv']) && is_array($payload['header_csv']) ? $payload['header_csv'] : array();
