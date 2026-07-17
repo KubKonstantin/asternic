@@ -734,6 +734,11 @@ $(document).on('click', '.play-btn', function(e) {
       <h2>Детализация</h2>
       <br/>
 <?php
+print_cdr_search_controls('incTable', array(
+    0 => 'Дата', 1 => 'CallerID', 2 => 'DID', 3 => 'Очередь', 4 => 'Агент', 5 => 'Ожидание', 6 => 'Разговор', 7 => 'Завершение'
+));
+?>
+<?php
 print_exports($header_pdf, $data_pdf, $width_pdf, $title_pdf, $cover_pdf,$header_pdf);
 ?>
         <br/>
