@@ -61,35 +61,58 @@ function tooltip($texto,$width) {
 }
 
 
-function print_exports($header_pdf,$data_pdf,$width_pdf,$title_pdf,$cover_pdf,$header_csv) {
+function print_exports($header_pdf,$data_pdf,$width_pdf,$title_pdf,$cover_pdf,$header_csv = null) {
 		global $lang;
 		global $language;
-		$headcsv_serial = serialize($header_csv);
-		$head_serial = serialize($header_pdf);
-		$data_serial = serialize($data_pdf);
-		$width_serial = serialize($width_pdf);
-		$title_serial = serialize($title_pdf);
-		$cover_serial = serialize($cover_pdf);
-		$head_serial = rawurlencode($head_serial);
-		$data_serial = rawurlencode($data_serial);
-		$width_serial = rawurlencode($width_serial);
-		$title_serial = rawurlencode($title_serial);
-		$cover_serial = rawurlencode($cover_serial);
-		echo "<BR><form method=post action='export.php'>\n";
+		if (!is_array($header_csv) || empty($header_csv)) {
+			$header_csv = $header_pdf;
+		}
+		$export_data = array(
+			'header_csv' => $header_csv,
+			'header_pdf' => $header_pdf,
+			'data' => $data_pdf,
+			'width' => $width_pdf,
+			'title' => $title_pdf,
+			'cover' => $cover_pdf
+		);
+		$export_token = bin2hex(random_bytes(16));
+		if (!isset($_SESSION['EXPORT_PAYLOADS']) || !is_array($_SESSION['EXPORT_PAYLOADS'])) {
+			$_SESSION['EXPORT_PAYLOADS'] = array();
+		}
+		$_SESSION['EXPORT_PAYLOADS'][$export_token] = $export_data;
+		if (count($_SESSION['EXPORT_PAYLOADS']) > 5) {
+			$_SESSION['EXPORT_PAYLOADS'] = array_slice($_SESSION['EXPORT_PAYLOADS'], -5, null, true);
+		}
+		echo "<BR><form method='post' action='export.php'>\n";
 		echo $lang["$language"]['export'];
-		echo "<input type='hidden' name='headcsv' value='".$headcsv_serial."' />\n";
-		echo "<input type='hidden' name='head' value='".$head_serial."' />\n";
-		echo "<input type='hidden' name='rawdata' value='".$data_serial."' />\n";
-		echo "<input type='hidden' name='width' value='".$width_serial."' />\n";
-		echo "<input type='hidden' name='title' value='".$title_serial."' />\n";
-		echo "<input type='hidden' name='cover' value='".$cover_serial."' />\n";
-		echo "<input type=image name='pdf' src='images/pdf.gif' ";
+		echo "<input type='hidden' name='export_token' value='".htmlspecialchars($export_token, ENT_QUOTES, 'UTF-8')."' />\n";
+		echo "<button type='submit' name='format' value='pdf' style='border:0;background:transparent;cursor:pointer' ";
 		tooltip($lang["$language"]['pdfhelp'],200);
-		echo ">\n";
-		echo "<input type=image name='csv' src='images/excel.png' "; 
+		echo "><img src='images/pdf.gif' alt='PDF'></button>\n";
+		echo "<button type='submit' name='format' value='excel' style='border:0;background:transparent;cursor:pointer' ";
 		tooltip($lang["$language"]['csvhelp'],200);
-		echo ">\n";
+		echo "><img src='images/excel.png' alt='Excel'></button>\n";
 		echo "</form>";
+}
+
+function print_cdr_search_controls($table_id, $fields) {
+	$control_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $table_id) . '-field-search';
+	echo '<div id="' . $control_id . '" style="margin:12px 0;padding:10px;background:#f3f3f3">';
+	echo '<label>Поле: <select class="cdr-search-field">';
+	foreach ($fields as $column_index => $label) {
+		echo '<option value="' . (int)$column_index . '">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</option>';
+	}
+	echo '</select></label> ';
+	echo '<label>Значение: <input type="text" class="cdr-search-value"></label> ';
+	echo '<button type="button" class="cdr-search-submit">Поиск</button> ';
+	echo '<button type="button" class="cdr-search-reset">Сбросить</button>';
+	echo '</div>';
+	echo '<script>(function($){$(function(){';
+	echo 'var root=$("#' . $control_id . '");';
+	echo 'root.on("click",".cdr-search-submit",function(){var table=$("#' . $table_id . '").DataTable();table.search("").columns().search("");table.column(parseInt(root.find(".cdr-search-field").val(),10)).search(root.find(".cdr-search-value").val()).draw();});';
+	echo 'root.on("click",".cdr-search-reset",function(){root.find(".cdr-search-value").val("");var table=$("#' . $table_id . '").DataTable();table.search("").columns().search("").draw();});';
+	echo 'root.find(".cdr-search-value").on("keydown",function(event){if(event.keyCode===13){event.preventDefault();root.find(".cdr-search-submit").click();}});';
+	echo '});})(jQuery);</script>';
 }
 
 function seconds2minutes($segundos) {

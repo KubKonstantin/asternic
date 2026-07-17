@@ -40,7 +40,7 @@ while ($row = $res->fetch_assoc()) {
 }
 
 $header_pdf = array("Дата", "Агент", "Номер", "Назнач.", "Продолж.");
-$width_pdf = array(50, 25, 25, 25, 25);
+$width_pdf = array(45, 60, 38, 38, 25);
 $title_pdf = "Исходящие вызовы";
 $data_pdf = array();
 foreach ($out as $k => $r) {
@@ -775,6 +775,11 @@ $(document).on('click', '.play-btn', function(e) {
       <br/>
       <h2>Детализация</h2>
       <br/>
+<?php
+print_cdr_search_controls('cdrTable', array(
+    0 => 'Дата', 1 => 'Агент', 2 => 'Номер', 3 => 'Набранный номер', 4 => 'Продолжительность', 5 => 'Статус'
+));
+?>
 <?php
 if (function_exists('print_exports')) {
     print_exports($header_pdf, $data_pdf, $width_pdf, $title_pdf, $cover_pdf, $header_pdf);
