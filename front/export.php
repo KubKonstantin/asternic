@@ -19,10 +19,15 @@ along with Asternic Call Center Stats.  If not, see
 <http://www.gnu.org/licenses/>.
  */
 
-require_once "config.php";
-require 'fpdf.php';
+error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
+$language = 'ru';
+require_once "lang/$language.php";
+require 'tfpdf.php';
 
-class PDF extends FPDF {
+class PDF extends tFPDF {
+	function __construct() {
+		parent::__construct('L', 'mm', 'A3');
+	}
 
 	function Footer() {
 		global $lang;
@@ -92,7 +97,7 @@ class PDF extends FPDF {
 			if ($supercont % 40 == 0) {
 				$this->Cell(array_sum($w), 0, '', 'T');
 				$this->AddPage();
-				//$this->TableHeader($header, $w);
+				$this->TableHeader($header, $w);
 				$this->SetFillColor(224, 235, 255);
 				$this->SetTextColor(0);
 				$this->SetFont('');
@@ -103,58 +108,74 @@ class PDF extends FPDF {
 	}
 }
 
-function export_csv($header, $data) {
-	header("Content-Type: application/csv-tab-delimited-table");
-	header("Content-disposition: filename=table.csv");
-
-	$linea = "";
-	foreach ($header as $valor) {
-		$valor = iconv('UTF-8', 'windows-1251', $valor);
-		$linea .= "\"$valor\";";
+function export_filename($title, $extension) {
+	$filename = preg_replace('/[^A-Za-z0-9_-]+/', '_', $title);
+	$filename = trim($filename, '_');
+	if ($filename === '') {
+		$filename = 'report';
 	}
-	$linea = substr($linea, 0, -1);
-
-	print $linea . "\r\n";
-
-	foreach ($data as $valor) {
-		$linea = "";
-		foreach ($valor as $subvalor) {
-			$subvalor = iconv('UTF-8', 'windows-1251', $subvalor);
-			$linea .= "\"$subvalor\";";
-		}
-		$linea = substr($linea, 0, -1);
-		print $linea . "\r\n";
-	}
+	return $filename . '.' . $extension;
 }
 
-$headercsv = unserialize(rawurldecode($_POST['headcsv']));
-$header = unserialize(rawurldecode($_POST['head']));
-$data = unserialize(rawurldecode($_POST['rawdata']));
-$width = unserialize(rawurldecode($_POST['width']));
-$title = unserialize(rawurldecode($_POST['title']));
-$cover = unserialize(rawurldecode($_POST['cover']));
+function export_csv($header, $data, $title) {
+	header("Content-Type: text/csv; charset=UTF-8");
+	header("Content-Disposition: attachment; filename=\"" . export_filename($title, 'csv') . "\"");
+	echo "\xEF\xBB\xBF";
+	$output = fopen('php://output', 'w');
+	fputcsv($output, $header, ';', '"', '\\');
+	foreach ($data as $row) {
+		fputcsv($output, $row, ';', '"', '\\');
+	}
+	fclose($output);
+}
 
-if (isset($_POST['pdf']) || isset($_POST['pdf_x'])) {
+$decoded_payload = isset($_POST['payload']) ? base64_decode($_POST['payload'], true) : false;
+$payload = $decoded_payload !== false ? json_decode($decoded_payload, true) : null;
+if (!is_array($payload)) {
+	http_response_code(400);
+	die('Некорректные данные выгрузки');
+}
+
+$headercsv = isset($payload['header_csv']) && is_array($payload['header_csv']) ? $payload['header_csv'] : array();
+$header = isset($payload['header_pdf']) && is_array($payload['header_pdf']) ? $payload['header_pdf'] : array();
+$data = isset($payload['data']) && is_array($payload['data']) ? $payload['data'] : array();
+$width = isset($payload['width']) && is_array($payload['width']) ? $payload['width'] : array();
+$title = isset($payload['title']) ? (string)$payload['title'] : 'report';
+$download_title = $title;
+$cover = isset($payload['cover']) ? (string)$payload['cover'] : '';
+
+function pdf_text($value) {
+	$converted = iconv('UTF-8', 'windows-1251//TRANSLIT', (string)$value);
+	return $converted === false ? (string)$value : $converted;
+}
+
+$header = array_map('pdf_text', $header);
+$title = pdf_text($title);
+$cover = pdf_text($cover);
+foreach ($data as $row_index => $row) {
+	$data[$row_index] = array_map('pdf_text', $row);
+}
+
+if (isset($_POST['format']) && $_POST['format'] === 'pdf') {
 	$pdf = new PDF();
 	$pdf->AddFont('ArialMT','','arialuni.php');
 	// $pdf->AddFont('ArialMT','B','arial.php');
 	$pdf->SetFont('ArialMT','',12);
 	// $pdf->SetFont('ArialMT','B',12); 
-	$pdf->SetAutoPageBreak(false);
+	$pdf->SetAutoPageBreak(true, 15);
 	$pdf->SetLeftMargin(1);
 	$pdf->SetRightMargin(1);
 	$pdf->AddPage();
 	$pdf->TableHeader($header, $width);
 	$pdf->FancyTable($header, $data, $width);
-	$pdf->AddPage();
 	if ($cover != "") {
+		$pdf->AddPage();
 		$pdf->Cover($cover);
 	}
-	$fn = str_replace(" ", "_", $title);
-	$filename = $fn . ".pdf";
+	$filename = export_filename($download_title, 'pdf');
 	$pdf->Output($filename,"D");
 	//$pdf->Output('F', '/var/www/html/queue-stats/pdf/export.pdf', true);
 } else {
-	export_csv($headercsv, $data);
+	export_csv($headercsv, $data, $download_title);
 }
 ?>
