@@ -18,63 +18,17 @@ along with Asterisk Call Center Stats.  If not, see
 <http://www.gnu.org/licenses/>.
  */
 require_once "config.php";
-include "sesvars.php";
-?>
-<?php
-//query mixed from queuelog and cdr (queuelog table must be in cdr databases)
-$sql = "select queue_log.time, queue_log.callid, queue_log.queuename, queue_log.agent,  queue_log.event, queue_log.data1 as wait, queue_log.data2 as dur, cdr.did, cdr.src, cdr.recordingfile, cdr.disposition from queue_log, cdr where queue_log.time >= '$start' AND queue_log.time <= '$end' AND queue_log.callid = cdr.uniqueid and queue_log.event in ('COMPLETECALLER', 'COMPLETEAGENT') and queue_log.agent in ($agent) and queue_log.queuename in ($queue) and cdr.disposition = 'ANSWERED' order by queue_log.time";
-
-$res = $connection->query($sql);
-
-$out = array();
-while ($row = $res->fetch_assoc()) {
-    $out[] = $row;
-}
-
-$header_pdf = array("Дата", "CallerId", "DID", "Очередь", "Агент", "Ожид.", "Разг.");
-$width_pdf = array(40, 32, 25, 25, 64, 25, 25);
-$title_pdf = "Принятые вызовы";
-$data_pdf = array();
-foreach ($out as $k => $r) {
-    $time = strtotime($r['time']);
-    $time = date('Y-m-d H:i:s', $time);
-    $dur = seconds2minutes($r['dur']);
-    $wait = seconds2minutes($r['wait']);
-    $linea_pdf = array($time, $r['src'], $r['did'], $r['queuename'], $r['agent'], $wait, $dur);
-    $data_pdf[] = $linea_pdf;
-}
-
-// Кодируем в JSON для JavaScript
-$out_json = json_encode($out, JSON_UNESCAPED_UNICODE);
-
-if (json_last_error() !== JSON_ERROR_NONE) {
-    $out_json = '[]';
-}
-
-$connection->close();
-
 // Функция для проверки наличия записи через API
-function checkRecording($uniqueid_without_dot, $queue, $cnum, $dst) {
-    if (empty($queue) || empty($uniqueid_without_dot) || empty($cnum) || empty($dst)) {
-        return array('success' => false, 'error' => 'Missing parameters');
-    }
-    
-    // Извлекаем номер из cnum (убираем префикс очереди)
-    $cnum_num = str_replace($queue . '_', '', $cnum);
-    
-    // Формируем префикс для поиска файла
-    // Для входящих звонков может быть другой формат, уточнить при необходимости
-    $prefix = "25_" . $queue . "|" . $cnum_num . "_" . $dst . "_" . $uniqueid_without_dot;
-    
+function listRecordingFiles($queue, $prefix) {
     $api_url = "http://10.137.2.178:5000/list-files";
-    
+
     $data = array(
         "X-Client" => $queue,
         "prefix" => $prefix
     );
-    
+
     $ch = curl_init();
-    
+
     curl_setopt($ch, CURLOPT_URL, $api_url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
@@ -86,42 +40,70 @@ function checkRecording($uniqueid_without_dot, $queue, $cnum, $dst) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-    
+
     $response = curl_exec($ch);
-    
-    if (curl_errno($ch)) {
-        curl_close($ch);
-        return array('success' => false, 'error' => 'CURL error: ' . curl_error($ch));
-    }
-    
+    $curl_errno = curl_errno($ch);
+    $curl_error = curl_error($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    
+
+    if ($curl_errno) {
+        return array(
+            'success' => false,
+            'error' => 'CURL error #' . $curl_errno . ': ' . ($curl_error !== '' ? $curl_error : 'unknown curl error'),
+            'prefix' => $prefix
+        );
+    }
+
     if ($http_code == 200 && $response) {
         $result = json_decode($response, true);
-        
+
         if ($result && isset($result['status'])) {
             if ($result['status'] == 'success') {
                 if (!empty($result['files'])) {
                     return array(
                         'success' => true,
                         'file_info' => $result['files'][0],
-                        'queue' => $queue
+                        'queue' => $queue,
+                        'prefix' => $prefix
                     );
-                } else {
-                    return array('success' => false, 'error' => 'Запись не найдена');
                 }
-            } else {
-                return array('success' => false, 'error' => 'API вернул ошибку');
+                return array('success' => false, 'error' => 'Запись не найдена', 'prefix' => $prefix);
             }
-        } else {
-            return array('success' => false, 'error' => 'Invalid JSON response from API');
+            return array('success' => false, 'error' => 'API вернул ошибку', 'prefix' => $prefix);
         }
-    } elseif ($http_code == 0) {
-        return array('success' => false, 'error' => 'API недоступен');
-    } else {
-        return array('success' => false, 'error' => 'HTTP error: ' . $http_code);
+        return array('success' => false, 'error' => 'Invalid JSON response from API', 'prefix' => $prefix);
     }
+
+    if ($http_code == 0) {
+        return array('success' => false, 'error' => 'API недоступен', 'prefix' => $prefix);
+    }
+
+    return array('success' => false, 'error' => 'HTTP error: ' . $http_code, 'prefix' => $prefix);
+}
+
+function checkRecording($uniqueid_without_dot, $queue, $cnum, $dst) {
+    if (empty($queue) || empty($uniqueid_without_dot) || empty($cnum) || empty($dst)) {
+        return array('success' => false, 'error' => 'Missing parameters');
+    }
+
+    $agent_without_queue = str_replace($queue . '_', '', $cnum);
+    $normalized_dst = preg_replace('/\D+/', '', $dst);
+    $dst_variants = array_values(array_unique(array_filter(array($dst, $normalized_dst))));
+    $agent_variants = array_values(array_unique(array_filter(array($agent_without_queue, $cnum))));
+
+    $last_result = null;
+    foreach ($agent_variants as $agent_variant) {
+        foreach ($dst_variants as $dst_variant) {
+            $prefix = "25_" . $queue . "|" . $agent_variant . "_" . $dst_variant . "_" . $uniqueid_without_dot;
+            $last_result = listRecordingFiles($queue, $prefix);
+            if (!empty($last_result['success'])) {
+                return $last_result;
+            }
+        }
+    }
+
+    return $last_result ? $last_result : array('success' => false, 'error' => 'Запись не найдена');
 }
 
 // Функция для декодирования записи
@@ -150,10 +132,12 @@ function decryptRecording($original_filename, $queue) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $response = curl_exec($ch);
+    $curl_errno = curl_errno($ch);
+    $curl_error = curl_error($ch);
     
-    if (curl_errno($ch)) {
+    if ($curl_errno) {
         curl_close($ch);
-        return array('success' => false, 'error' => 'CURL error: ' . curl_error($ch));
+        return array('success' => false, 'error' => 'CURL error #' . $curl_errno . ': ' . ($curl_error !== '' ? $curl_error : 'unknown curl error'));
     }
     
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -204,6 +188,45 @@ if (isset($_GET['action'])) {
         exit;
     }
 }
+
+// Load report filters only for full page rendering. AJAX recording checks must not
+// pass through sesvars.php, because sesvars.php redirects pages without a selected
+// QSTATS period to index.php and corrupts the JSON response.
+include "sesvars.php";
+?>
+<?php
+//query mixed from queuelog and cdr (queuelog table must be in cdr databases)
+$sql = "select queue_log.time, queue_log.callid, queue_log.queuename, queue_log.agent,  queue_log.event, queue_log.data1 as wait, queue_log.data2 as dur, cdr.did, cdr.src, cdr.recordingfile, cdr.disposition from queue_log, cdr where queue_log.time >= '$start' AND queue_log.time <= '$end' AND queue_log.callid = cdr.uniqueid and queue_log.event in ('COMPLETECALLER', 'COMPLETEAGENT') and queue_log.agent in ($agent) and queue_log.queuename in ($queue) and cdr.disposition = 'ANSWERED' order by queue_log.time";
+
+$res = $connection->query($sql);
+
+$out = array();
+while ($row = $res->fetch_assoc()) {
+    $out[] = $row;
+}
+
+$header_pdf = array("Дата", "CallerId", "DID", "Очередь", "Агент", "Ожид.", "Разг.");
+$width_pdf = array(40, 32, 25, 25, 64, 25, 25);
+$title_pdf = "Принятые вызовы";
+$data_pdf = array();
+foreach ($out as $k => $r) {
+    $time = strtotime($r['time']);
+    $time = date('Y-m-d H:i:s', $time);
+    $dur = seconds2minutes($r['dur']);
+    $wait = seconds2minutes($r['wait']);
+    $linea_pdf = array($time, $r['src'], $r['did'], $r['queuename'], $r['agent'], $wait, $dur);
+    $data_pdf[] = $linea_pdf;
+}
+
+// Кодируем в JSON для JavaScript
+$out_json = json_encode($out, JSON_UNESCAPED_UNICODE);
+
+if (json_last_error() !== JSON_ERROR_NONE) {
+    $out_json = '[]';
+}
+
+$connection->close();
+
 
 ?>
 <!DOCTYPE html>

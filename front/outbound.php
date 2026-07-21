@@ -94,10 +94,12 @@ function checkRecording($uniqueid_without_dot, $queue, $cnum, $dst) {
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
     
     $response = curl_exec($ch);
+    $curl_errno = curl_errno($ch);
+    $curl_error = curl_error($ch);
     
-    if (curl_errno($ch)) {
+    if ($curl_errno) {
         curl_close($ch);
-        return array('success' => false, 'error' => 'CURL error: ' . curl_error($ch));
+        return array('success' => false, 'error' => 'CURL error #' . $curl_errno . ': ' . ($curl_error !== '' ? $curl_error : 'unknown curl error'));
     }
     
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -156,10 +158,12 @@ function decryptRecording($original_filename, $queue) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $response = curl_exec($ch);
+    $curl_errno = curl_errno($ch);
+    $curl_error = curl_error($ch);
     
-    if (curl_errno($ch)) {
+    if ($curl_errno) {
         curl_close($ch);
-        return array('success' => false, 'error' => 'CURL error: ' . curl_error($ch));
+        return array('success' => false, 'error' => 'CURL error #' . $curl_errno . ': ' . ($curl_error !== '' ? $curl_error : 'unknown curl error'));
     }
     
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
