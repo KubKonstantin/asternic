@@ -40,7 +40,7 @@ while ($row = $res->fetch_assoc()) {
 }
 
 $header_pdf = array("Дата", "Агент", "Номер", "Назнач.", "Продолж.");
-$width_pdf = array(50, 25, 25, 25, 25);
+$width_pdf = array(45, 60, 38, 38, 25);
 $title_pdf = "Исходящие вызовы";
 $data_pdf = array();
 foreach ($out as $k => $r) {
@@ -94,10 +94,12 @@ function checkRecording($uniqueid_without_dot, $queue, $cnum, $dst) {
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
     
     $response = curl_exec($ch);
+    $curl_errno = curl_errno($ch);
+    $curl_error = curl_error($ch);
     
-    if (curl_errno($ch)) {
+    if ($curl_errno) {
         curl_close($ch);
-        return array('success' => false, 'error' => 'CURL error: ' . curl_error($ch));
+        return array('success' => false, 'error' => 'CURL error #' . $curl_errno . ': ' . ($curl_error !== '' ? $curl_error : 'unknown curl error'));
     }
     
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -156,10 +158,12 @@ function decryptRecording($original_filename, $queue) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     
     $response = curl_exec($ch);
+    $curl_errno = curl_errno($ch);
+    $curl_error = curl_error($ch);
     
-    if (curl_errno($ch)) {
+    if ($curl_errno) {
         curl_close($ch);
-        return array('success' => false, 'error' => 'CURL error: ' . curl_error($ch));
+        return array('success' => false, 'error' => 'CURL error #' . $curl_errno . ': ' . ($curl_error !== '' ? $curl_error : 'unknown curl error'));
     }
     
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -185,10 +189,12 @@ if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     
     if ($_GET['action'] == 'check_recording') {
-        if (isset($_GET['uniqueid']) && isset($_GET['queue']) && isset($_GET['cnum']) && isset($_GET['dst'])) {
+		if (isset($_GET['uniqueid']) && isset($_GET['cnum']) && isset($_GET['dst'])) {
             $uniqueid_parts = explode('.', $_GET['uniqueid']);
             $uniqueid_without_dot = $uniqueid_parts[0];
-            $result = checkRecording($uniqueid_without_dot, $_GET['queue'], $_GET['cnum'], $_GET['dst']);
+			$cnum_parts = explode('_', $_GET['cnum'], 2);
+			$recording_queue = $cnum_parts[0];
+			$result = checkRecording($uniqueid_without_dot, $recording_queue, $_GET['cnum'], $_GET['dst']);
             echo json_encode($result);
         } else {
             echo json_encode(array('success' => false, 'error' => 'Missing parameters'));
@@ -290,7 +296,6 @@ if (isset($_GET['action'])) {
     </style>
     <script>
       let outs = <?php echo $out_json; ?>;
-      let queue = <?php echo isset($queue) ? $queue : ''; ?>;
       
       if (!Array.isArray(outs)) {
           outs = [];
@@ -368,6 +373,7 @@ function restoreButtonsFromCache() {
                 $cell.html(`
                     <button class="play-btn" 
                             data-original-filename="${data.original_filename}"
+							data-queue="${data.queue}"
                             title="Воспроизвести запись">
                         ▶️ Воспроизвести
                     </button>
@@ -549,6 +555,7 @@ function checkRecording(uniqueid, queue, cnum, dst) {
                 // Сохраняем информацию в localStorage
                 localStorage.setItem(`record_${uniqueid}`, JSON.stringify({
                     original_filename: response.file_info.original_filename,
+					queue: queue,
                     timestamp: Date.now()
                 }));
                 
@@ -556,6 +563,7 @@ function checkRecording(uniqueid, queue, cnum, dst) {
                 $cell.html(`
                     <button class="play-btn" 
                             data-original-filename="${response.file_info.original_filename}"
+							data-queue="${queue}"
                             title="Воспроизвести запись">
                         ▶️ Воспроизвести
                     </button>
@@ -682,6 +690,7 @@ $(document).on('click', '.check-btn', function(e) {
     const uniqueid = $(this).data('uniqueid');
     const cnum = $(this).data('cnum');
     const dst = $(this).data('dst');
+	const queue = String(cnum).split('_', 1)[0];
     checkRecording(uniqueid, queue, cnum, dst);
 });
 
@@ -690,6 +699,7 @@ $(document).on('click', '.play-btn', function(e) {
     e.preventDefault();
     if (!$(this).hasClass('loading')) {
         const original_filename = $(this).data('original-filename');
+		const queue = $(this).data('queue');
         playRecording(original_filename, queue);
     }
 });
@@ -775,6 +785,11 @@ $(document).on('click', '.play-btn', function(e) {
       <br/>
       <h2>Детализация</h2>
       <br/>
+<?php
+print_cdr_search_controls('cdrTable', array(
+    0 => 'Дата', 1 => 'Агент', 2 => 'Номер', 3 => 'Набранный номер', 4 => 'Продолжительность', 5 => 'Статус'
+));
+?>
 <?php
 if (function_exists('print_exports')) {
     print_exports($header_pdf, $data_pdf, $width_pdf, $title_pdf, $cover_pdf, $header_pdf);

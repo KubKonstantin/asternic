@@ -1257,7 +1257,7 @@ function _dochecks()
 	if(ini_get('mbstring.func_overload') & 2)
 		$this->Error('mbstring overloading must be disabled');
 	// Ensure runtime magic quotes are disabled
-	if(get_magic_quotes_runtime())
+	if(PHP_VERSION_ID < 70400 && function_exists('get_magic_quotes_runtime') && get_magic_quotes_runtime())
 		@set_magic_quotes_runtime(0);
 }
 
@@ -1819,8 +1819,8 @@ function _putfonts()
 			$this->_out('/FontDescriptor '.($this->n+2).' 0 R');
 			if($font['enc'])
 			{
-				if(isset($font['diff']))
-					$this->_out('/Encoding '.($nf+$font['diff']).' 0 R');
+				if(isset($font['diffn']))
+					$this->_out('/Encoding '.($nf+$font['diffn']).' 0 R');
 				else
 					$this->_out('/Encoding /WinAnsiEncoding');
 			}
