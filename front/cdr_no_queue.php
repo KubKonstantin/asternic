@@ -1,6 +1,7 @@
 <?php
 require_once "config.php";
 require_once "casdoor_auth.php";
+require_once "cdr_no_queue_recordings.php";
 
 check_auth();
 
@@ -9,101 +10,13 @@ if (!isset($cdr_direction) || !in_array($cdr_direction, ['inbound', 'outbound'],
 	die('Неизвестное направление вызовов');
 }
 
-function cdr_user_group() {
-	$username = get_authenticated_username();
-	$separator = strpos($username, '_');
-	$group = $separator === false ? '' : substr($username, 0, $separator);
-
-	if ($group === '' || !preg_match('/^[A-Za-z0-9-]+$/', $group)) {
-		http_response_code(403);
-		die('Не удалось определить группу из логина');
-	}
-
-	return $group;
+$user_group = no_queue_user_group(get_authenticated_username());
+if ($user_group === '') {
+	http_response_code(403);
+	die('Не удалось определить группу из логина');
 }
 
-function cdr_recording_api($path, $payload, $timeout) {
-	$ch = curl_init('http://10.137.2.178:5000/' . $path);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Accept: application/json']);
-	curl_setopt($ch, CURLOPT_POST, true);
-	curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-	curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-	$response = curl_exec($ch);
-	$errno = curl_errno($ch);
-	$error = curl_error($ch);
-	$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-	curl_close($ch);
-
-	if ($errno) {
-		return ['success' => false, 'error' => 'CURL error #' . $errno . ': ' . ($error ?: 'unknown curl error')];
-	}
-	if ($http_code !== 200) {
-		return ['success' => false, 'error' => 'HTTP error: ' . $http_code];
-	}
-
-	$result = json_decode($response, true);
-	if (!is_array($result)) {
-		return ['success' => false, 'error' => 'Invalid JSON response from API'];
-	}
-	return ['success' => true, 'result' => $result];
-}
-
-function cdr_find_recording($group, $uniqueid, $agent, $remote_number) {
-	$callid = explode('.', $uniqueid)[0];
-	$short_agent = strpos($agent, $group . '_') === 0 ? substr($agent, strlen($group) + 1) : $agent;
-	$digits = preg_replace('/\D+/', '', $remote_number);
-	$agents = array_values(array_unique(array_filter([$short_agent, $agent])));
-	$numbers = array_values(array_unique(array_filter([$remote_number, $digits])));
-	$last_error = 'Запись не найдена';
-
-	foreach ($agents as $agent_variant) {
-		foreach ($numbers as $number_variant) {
-			$prefix = '25_' . $group . '|' . $agent_variant . '_' . $number_variant . '_' . $callid;
-			$api = cdr_recording_api('list-files', ['X-Client' => $group, 'prefix' => $prefix], 10);
-			if (!$api['success']) {
-				$last_error = $api['error'];
-				continue;
-			}
-			if (($api['result']['status'] ?? '') === 'success' && !empty($api['result']['files'])) {
-				return ['success' => true, 'file_info' => $api['result']['files'][0]];
-			}
-		}
-	}
-
-	return ['success' => false, 'error' => $last_error];
-}
-
-$user_group = cdr_user_group();
-
-if (isset($_GET['action'])) {
-	header('Content-Type: application/json; charset=utf-8');
-	if ($_GET['action'] === 'check_recording') {
-		if (empty($_GET['uniqueid']) || empty($_GET['agent']) || empty($_GET['number'])) {
-			echo json_encode(['success' => false, 'error' => 'Missing parameters']);
-		} elseif (strpos((string)$_GET['agent'], $user_group . '_') !== 0) {
-			http_response_code(403);
-			echo json_encode(['success' => false, 'error' => 'Доступ к записи запрещен']);
-		} else {
-			echo json_encode(cdr_find_recording($user_group, (string)$_GET['uniqueid'], (string)$_GET['agent'], (string)$_GET['number']));
-		}
-		exit;
-	}
-	if ($_GET['action'] === 'decrypt_play') {
-		if (empty($_GET['original_filename'])) {
-			echo json_encode(['success' => false, 'error' => 'Missing parameters']);
-		} else {
-			$api = cdr_recording_api('decrypt', ['record_file' => basename((string)$_GET['original_filename']), 'X-Client' => $user_group], 30);
-			$success = $api['success'] && (($api['result']['status'] ?? '') === 'success');
-			echo json_encode($success ? ['success' => true] : ['success' => false, 'error' => $api['error'] ?? 'Decryption failed']);
-		}
-		exit;
-	}
-	http_response_code(400);
-	echo json_encode(['success' => false, 'error' => 'Unknown action']);
-	exit;
-}
+no_queue_handle_recording_action($connection, $user_group, $cdr_direction);
 
 require_once "sesvars.php";
 
@@ -254,9 +167,7 @@ $cover_pdf = $page_title . "\nПериод: " . $start . ' - ' . $end;
 				<td class="recording-cell">
 				<?php if ($call['disposition'] === 'ANSWERED'): ?>
 					<button type="button" class="check-recording"
-						data-uniqueid="<?php echo htmlspecialchars($call['uniqueid']); ?>"
-						data-agent="<?php echo htmlspecialchars($call['cnum']); ?>"
-						data-number="<?php echo htmlspecialchars($is_inbound ? $call['src'] : $call['dst']); ?>">🔍 Проверить</button>
+						data-uniqueid="<?php echo htmlspecialchars($call['uniqueid']); ?>">🔍 Проверить</button>
 					<span class="recording-status"></span>
 				<?php else: ?>—<?php endif; ?>
 				</td>
@@ -275,9 +186,7 @@ $('.check-recording').on('click', function () {
 	status.textContent = 'Проверка...';
 	$.getJSON(window.location.pathname, {
 		action: 'check_recording',
-		uniqueid: button.dataset.uniqueid,
-		agent: button.dataset.agent,
-		number: button.dataset.number
+		uniqueid: button.dataset.uniqueid
 	}).done(function (response) {
 		if (!response.success) {
 			button.disabled = false;
@@ -288,7 +197,7 @@ $('.check-recording').on('click', function () {
 		button.textContent = '⏳ Декодирование...';
 		$.getJSON(window.location.pathname, {
 			action: 'decrypt_play',
-			original_filename: response.file_info.original_filename
+			recording_token: response.recording_token
 		}).done(function (decrypt) {
 			if (!decrypt.success) {
 				button.disabled = false;
@@ -299,7 +208,7 @@ $('.check-recording').on('click', function () {
 			}
 			const audio = document.createElement('audio');
 			audio.controls = true;
-			audio.src = 'find_audio_file.php?original_filename=' + encodeURIComponent(response.file_info.original_filename);
+			audio.src = decrypt.audio_url;
 			cell.replaceChildren(audio);
 		}).fail(function () {
 			button.disabled = false;
