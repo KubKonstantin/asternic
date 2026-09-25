@@ -20,11 +20,39 @@
 */
 
 if(isset($_POST['List_Queue'])) {
-	$queue="";
-	foreach($_POST['List_Queue'] as $valor) {
-		$queue.=stripslashes($valor).",";
+	$selected_queues = array_map('stripslashes', $_POST['List_Queue']);
+
+	if (in_array("'all'", $selected_queues, true)) {
+		require_once "casdoor_auth.php";
+
+		$all_queues = array();
+		$res_all_queues = mysqli_query($connection, "SELECT name FROM queues");
+		while ($row = mysqli_fetch_row($res_all_queues)) {
+			$all_queues[] = $row[0];
+		}
+		$res_all_queues->free();
+
+		if (function_exists('filter_queues_for_user')) {
+			$all_queues = filter_queues_for_user($all_queues, get_authenticated_username());
+		}
+
+		$expanded_queues = array();
+		foreach ($all_queues as $queue_name) {
+			if ($queue_name != "NONE") {
+				$expanded_queues[] = "'" . $queue_name . "'";
+			}
+		}
+		$queue = implode(",", $expanded_queues);
+	} else {
+		$queue="";
+		foreach($selected_queues as $valor) {
+			$queue.=$valor.",";
+		}
+		$queue=substr($queue,0,-1);
 	}
-	$queue=substr($queue,0,-1);
+	if (trim($queue) === '') {
+		$queue="'NONE'";
+	}
     $_SESSION['QSTATS']['queue']=$queue;
 } else {
 	$queue="'NONE'";

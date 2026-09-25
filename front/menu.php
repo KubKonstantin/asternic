@@ -22,8 +22,9 @@ along with Asterisk Call Center Stats.  If not, see
 <div id="content">
 <a name='0'></a>
 <div style="float: right; padding: 10px; font-size: 14px;">
-    <?php if (isset($_SESSION['casdoor_user'])): ?>
-        Привет, <?php echo htmlspecialchars($_SESSION['casdoor_user']['name']); ?>!
+    <?php $auth_user = $_SESSION['auth_user'] ?? null; ?>
+    <?php if ($auth_user): ?>
+        Привет, <?php echo htmlspecialchars($auth_user['name']); ?>!
         | <a href="logout.php">Выйти</a>
     <?php endif; ?>
 </div>
@@ -36,6 +37,8 @@ $menu[] = $lang["$language"]['ans_cdr'];
 $menu[] = $lang["$language"]['menu_unanswered'];
 $menu[] = $lang["$language"]['unans_cdr'];
 $menu[] = $lang["$language"]['outbound'];
+$menu[] = 'Входящие без очереди';
+$menu[] = 'Исходящие без очереди';
 $menu[] = $lang["$language"]['menu_distribution'];
 $menu[] = $lang["$language"]['distr_by_agents_dates'];
 $menu[] = $lang["$language"]['distr_by_agents_hours'];
@@ -51,6 +54,8 @@ $link[] = "answered_cdr.php";
 $link[] = "unanswered.php";
 $link[] = "unanswered_cdr.php";
 $link[] = "outbound.php";
+$link[] = "cdr_inbound.php";
+$link[] = "cdr_outbound.php";
 $link[] = "distribution.php";
 $link[] = "areport.php";
 $link[] = "qreport.php";
