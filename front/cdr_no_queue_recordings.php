@@ -1,13 +1,5 @@
 <?php
 
-function no_queue_user_group($username) {
-	$username = trim((string)$username);
-	$separator = strpos($username, '_');
-	$group = $separator === false ? '' : substr($username, 0, $separator);
-
-	return preg_match('/^[A-Za-z0-9-]+$/', $group) ? $group : '';
-}
-
 function no_queue_recording_api($path, $payload, $timeout) {
 	$ch = curl_init('http://10.137.2.178:5000/' . $path);
 	curl_setopt_array($ch, [
@@ -64,18 +56,16 @@ function no_queue_find_recording($group, $call) {
 	return ['success' => false, 'error' => 'Запись не найдена'];
 }
 
-function no_queue_load_call($connection, $uniqueid, $group, $direction) {
+function no_queue_load_call($connection, $uniqueid, $allowed_queues, $direction) {
 	$external_number_pattern = '^([+]7|7|8)[0-9]{10}$';
 	$direction_condition = $direction === 'inbound'
 		? "src REGEXP '$external_number_pattern' AND dst NOT REGEXP '$external_number_pattern'"
 		: "dst REGEXP '$external_number_pattern'";
 	$sql = 'SELECT uniqueid, src, dst, cnum, disposition FROM cdr'
-		. ' WHERE uniqueid = ? AND LEFT(cnum, ?) = ? AND ' . $direction_condition
+		. ' WHERE uniqueid = ? AND ' . $direction_condition
 		. ' AND NOT EXISTS (SELECT 1 FROM queue_log q WHERE q.callid = cdr.uniqueid) LIMIT 1';
 	$stmt = $connection->prepare($sql);
-	$prefix = $group . '_';
-	$prefix_length = strlen($prefix);
-	$stmt->bind_param('sis', $uniqueid, $prefix_length, $prefix);
+	$stmt->bind_param('s', $uniqueid);
 	$stmt->execute();
 	$stmt->bind_result($call_uniqueid, $src, $dst, $cnum, $disposition);
 	$call = $stmt->fetch() ? [
@@ -87,6 +77,17 @@ function no_queue_load_call($connection, $uniqueid, $group, $direction) {
 		'direction' => $direction
 	] : null;
 	$stmt->close();
+	if ($call) {
+		$call['group'] = '';
+		foreach ($allowed_queues as $allowed_queue) {
+			if (strpos($call['cnum'], $allowed_queue . '_') === 0 && strlen($allowed_queue) > strlen($call['group'])) {
+				$call['group'] = $allowed_queue;
+			}
+		}
+		if ($call['group'] === '') {
+			return null;
+		}
+	}
 	return $call;
 }
 
@@ -97,7 +98,7 @@ function no_queue_json_response($payload, $status = 200) {
 	exit;
 }
 
-function no_queue_handle_recording_action($connection, $group, $direction) {
+function no_queue_handle_recording_action($connection, $allowed_queues, $direction) {
 	$action = isset($_GET['action']) ? (string)$_GET['action'] : '';
 	if ($action === '') {
 		return;
@@ -105,11 +106,12 @@ function no_queue_handle_recording_action($connection, $group, $direction) {
 
 	if ($action === 'check_recording') {
 		$uniqueid = trim(isset($_GET['uniqueid']) ? (string)$_GET['uniqueid'] : '');
-		$call = $uniqueid === '' ? null : no_queue_load_call($connection, $uniqueid, $group, $direction);
+		$call = $uniqueid === '' ? null : no_queue_load_call($connection, $uniqueid, $allowed_queues, $direction);
 		if (!$call || $call['disposition'] !== 'ANSWERED') {
 			no_queue_json_response(['success' => false, 'error' => 'Вызов не найден или недоступен'], 404);
 		}
 
+		$group = $call['group'];
 		$recording = no_queue_find_recording($group, $call);
 		if (!$recording['success']) {
 			no_queue_json_response($recording, 404);
@@ -128,13 +130,13 @@ function no_queue_handle_recording_action($connection, $group, $direction) {
 	if ($action === 'decrypt_play') {
 		$token = isset($_GET['recording_token']) ? (string)$_GET['recording_token'] : '';
 		$recording = $_SESSION['NO_QUEUE_RECORDINGS'][$token] ?? null;
-		if (!$recording || $recording['group'] !== $group || time() - $recording['created_at'] > 900) {
+		if (!$recording || !in_array($recording['group'], $allowed_queues, true) || time() - $recording['created_at'] > 900) {
 			no_queue_json_response(['success' => false, 'error' => 'Токен записи недействителен'], 403);
 		}
 
 		$api = no_queue_recording_api('decrypt', [
 			'record_file' => $recording['filename'],
-			'X-Client' => $group
+			'X-Client' => $recording['group']
 		], 30);
 		if (!$api['success'] || ($api['result']['status'] ?? '') !== 'success') {
 			no_queue_json_response(['success' => false, 'error' => $api['error'] ?? 'Ошибка декодирования'], 502);

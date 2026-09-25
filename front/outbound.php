@@ -189,10 +189,12 @@ if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     
     if ($_GET['action'] == 'check_recording') {
-        if (isset($_GET['uniqueid']) && isset($_GET['queue']) && isset($_GET['cnum']) && isset($_GET['dst'])) {
+		if (isset($_GET['uniqueid']) && isset($_GET['cnum']) && isset($_GET['dst'])) {
             $uniqueid_parts = explode('.', $_GET['uniqueid']);
             $uniqueid_without_dot = $uniqueid_parts[0];
-            $result = checkRecording($uniqueid_without_dot, $_GET['queue'], $_GET['cnum'], $_GET['dst']);
+			$cnum_parts = explode('_', $_GET['cnum'], 2);
+			$recording_queue = $cnum_parts[0];
+			$result = checkRecording($uniqueid_without_dot, $recording_queue, $_GET['cnum'], $_GET['dst']);
             echo json_encode($result);
         } else {
             echo json_encode(array('success' => false, 'error' => 'Missing parameters'));
@@ -294,7 +296,6 @@ if (isset($_GET['action'])) {
     </style>
     <script>
       let outs = <?php echo $out_json; ?>;
-      let queue = <?php echo isset($queue) ? $queue : ''; ?>;
       
       if (!Array.isArray(outs)) {
           outs = [];
@@ -372,6 +373,7 @@ function restoreButtonsFromCache() {
                 $cell.html(`
                     <button class="play-btn" 
                             data-original-filename="${data.original_filename}"
+							data-queue="${data.queue}"
                             title="Воспроизвести запись">
                         ▶️ Воспроизвести
                     </button>
@@ -553,6 +555,7 @@ function checkRecording(uniqueid, queue, cnum, dst) {
                 // Сохраняем информацию в localStorage
                 localStorage.setItem(`record_${uniqueid}`, JSON.stringify({
                     original_filename: response.file_info.original_filename,
+					queue: queue,
                     timestamp: Date.now()
                 }));
                 
@@ -560,6 +563,7 @@ function checkRecording(uniqueid, queue, cnum, dst) {
                 $cell.html(`
                     <button class="play-btn" 
                             data-original-filename="${response.file_info.original_filename}"
+							data-queue="${queue}"
                             title="Воспроизвести запись">
                         ▶️ Воспроизвести
                     </button>
@@ -686,6 +690,7 @@ $(document).on('click', '.check-btn', function(e) {
     const uniqueid = $(this).data('uniqueid');
     const cnum = $(this).data('cnum');
     const dst = $(this).data('dst');
+	const queue = String(cnum).split('_', 1)[0];
     checkRecording(uniqueid, queue, cnum, dst);
 });
 
@@ -694,6 +699,7 @@ $(document).on('click', '.play-btn', function(e) {
     e.preventDefault();
     if (!$(this).hasClass('loading')) {
         const original_filename = $(this).data('original-filename');
+		const queue = $(this).data('queue');
         playRecording(original_filename, queue);
     }
 });

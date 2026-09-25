@@ -10,13 +10,22 @@ if (!isset($cdr_direction) || !in_array($cdr_direction, ['inbound', 'outbound'],
 	die('Неизвестное направление вызовов');
 }
 
-$user_group = no_queue_user_group(get_authenticated_username());
-if ($user_group === '') {
+$allowed_queues = get_allowed_queues_for_user(get_authenticated_username());
+if ($allowed_queues === null) {
+	$allowed_queues = [];
+	$queue_result = $connection->query('SELECT name FROM queues');
+	while ($queue_row = $queue_result->fetch_row()) {
+		$allowed_queues[] = (string)$queue_row[0];
+	}
+	$queue_result->free();
+}
+$allowed_queues = array_values(array_filter(array_unique(array_map('strval', $allowed_queues))));
+if (!$allowed_queues) {
 	http_response_code(403);
-	die('Не удалось определить группу из логина');
+	die('Нет доступных очередей');
 }
 
-no_queue_handle_recording_action($connection, $user_group, $cdr_direction);
+no_queue_handle_recording_action($connection, $allowed_queues, $cdr_direction);
 
 require_once "sesvars.php";
 
@@ -45,13 +54,19 @@ $external_number_pattern = '^([+]7|7|8)[0-9]{10}$';
 $direction_condition = $cdr_direction === 'inbound'
 	? "cdr.src REGEXP '$external_number_pattern' AND cdr.dst NOT REGEXP '$external_number_pattern'"
 	: "cdr.dst REGEXP '$external_number_pattern'";
+$queue_conditions = [];
+foreach ($allowed_queues as $allowed_queue) {
+	$queue_prefix = $connection->real_escape_string($allowed_queue . '_');
+	$queue_conditions[] = "LEFT(cdr.cnum, " . strlen($allowed_queue . '_') . ") = '$queue_prefix'";
+}
+$queue_condition = '(' . implode(' OR ', $queue_conditions) . ')';
 
 $sql = "SELECT cdr.calldate, cdr.uniqueid, cdr.src, cdr.dst, cdr.did, cdr.cnum,
 		cdr.duration, cdr.billsec, cdr.disposition, cdr.recordingfile
 	FROM cdr
 	WHERE cdr.calldate >= '$start_sql'
 		AND cdr.calldate <= '$end_sql'
-		AND LEFT(cdr.cnum, " . (strlen($user_group) + 1) . ") = '" . $connection->real_escape_string($user_group . '_') . "'
+		AND $queue_condition
 		AND $direction_condition
 		AND NOT EXISTS (
 			SELECT 1 FROM queue_log q WHERE q.callid = cdr.uniqueid
